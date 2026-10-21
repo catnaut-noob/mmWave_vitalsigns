@@ -1,0 +1,15 @@
+# CCS / compiler output
+**/Debug/
+**/Release/
+**/.clangd/
+*.o
+*.d
+*.out
+*.map
+*.rig
+
+# Editor and OS temporary files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
