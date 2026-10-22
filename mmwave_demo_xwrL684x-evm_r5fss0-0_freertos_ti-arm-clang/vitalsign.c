@@ -62,6 +62,12 @@
 #include <common/sys_types.h>
 #include <drivers/hw_include/csl_complex_math_types.h>
 
+/* Six fixed angle samples are stored for each range bin in every frame. */
+#if VS_NUM_ANGLE_SEL_BIN != 6
+#error "Update the six angle sample positions when VS_NUM_ANGLE_SEL_BIN changes"
+#endif
+#define VS_SELECTED_ANGLE_CENTER_IDX 2U
+
 /**************************vital signs locations*******************************************/
 vsFeature vitalSignsOutput;
 vsAntennaGeometry vitalSignsAntenna;
@@ -171,7 +177,8 @@ void MmwDemo_computeVitalSignProcessing(cplxf_t *vsDataAngleFftOutBuf, uint16_t 
 	uint32_t spectrumBinIdx;
 	
 	//Breath rate array for computation of devation
-    float    breathCircularBufferFull[100];
+    /* Original: float breathCircularBufferFull[100]; */
+    float    breathCircularBufferFull[100] = { 0 };
 
     uint16_t comparePreviousPeak    = 0;
     uint32_t addressRearrangeOffset = 0;
@@ -311,7 +318,9 @@ void MmwDemo_computeVitalSignProcessing(cplxf_t *vsDataAngleFftOutBuf, uint16_t 
 			*/
 			
             // last 100 breath data points for breathing deviation calculation
-            if (angleBinIdx == 5 && rangeBinIdx == 3)
+            /* Original: if (angleBinIdx == 5 && rangeBinIdx == 3) */
+            if (angleBinIdx == VS_SELECTED_ANGLE_CENTER_IDX &&
+                rangeBinIdx == (VS_NUM_RANGE_SEL_BIN / 2))
             {
                 // output to GUI for visualizer
                 for (frameSizeIdx = 0; frameSizeIdx < 100; frameSizeIdx++)
@@ -765,7 +774,12 @@ void MmwDemo_runPreProcess(cplxf_t *pDataIn, uint32_t vsDataCount)
     rangeBinIdx = 0;
     azimFftIdx = 0;
     dataIdx  = 0;
-	numberVirtualAntenna = vitalSignsAntenna.numRxAntennas * vitalSignsAntenna.numRxAntennas;
+	/* Original: numberVirtualAntenna = vitalSignsAntenna.numRxAntennas * vitalSignsAntenna.numRxAntennas; */
+    numberVirtualAntenna = vitalSignsAntenna.numTxAntennas * vitalSignsAntenna.numRxAntennas;
+    if (numberVirtualAntenna > VS_NUM_VIRTUAL_CHANNEL)
+    {
+        numberVirtualAntenna = VS_NUM_VIRTUAL_CHANNEL;
+    }
 
     switch (vsLastFramePeakIdxI)
     {
@@ -908,8 +922,8 @@ void MmwDemo_runPreProcess(cplxf_t *pDataIn, uint32_t vsDataCount)
         }
 
 
+        /* Original 3x3 angle selection (nine writes into six slots):
         //----------3rd save 9 ptrs in L3------------------------------------------------------------------------------
-
         vsDataAngleFftOutBuf[dataSetIdx] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ1 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI1];
         dataSetIdx++;
         vsDataAngleFftOutBuf[dataSetIdx] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ1 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI2];
@@ -928,6 +942,16 @@ void MmwDemo_runPreProcess(cplxf_t *pDataIn, uint32_t vsDataCount)
         dataSetIdx++;
         vsDataAngleFftOutBuf[dataSetIdx] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ3 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI3];
         dataSetIdx++;
+        */
+        /* Keep the centre and its four axial neighbours, plus one diagonal.
+         * The order is fixed so each angle index refers to the same offset
+         * throughout the 128-frame phase history. */
+        vsDataAngleFftOutBuf[dataSetIdx++] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ1 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI2];
+        vsDataAngleFftOutBuf[dataSetIdx++] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ2 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI1];
+        vsDataAngleFftOutBuf[dataSetIdx++] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ2 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI2];
+        vsDataAngleFftOutBuf[dataSetIdx++] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ2 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI3];
+        vsDataAngleFftOutBuf[dataSetIdx++] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ3 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI2];
+        vsDataAngleFftOutBuf[dataSetIdx++] = vsDataAngleFftOutBufTemp[vsLastFramePeakIdxJ3 * VS_NUM_ANGLE_FFT + vsLastFramePeakIdxI3];
     }
 
     if ((vsDataCount == 127) | (vsLoop == 0 & vsDataCount == 1))
@@ -962,7 +986,9 @@ void MmwDemo_runPreProcess(cplxf_t *pDataIn, uint32_t vsDataCount)
         }
 
 
-        memset((uint8_t *)&vsDataMeanBuf[vsMeanCntOffset1], 0, sizeof(120));
+        /* Original: memset((uint8_t *)&vsDataMeanBuf[vsMeanCntOffset1], 0, sizeof(120)); */
+        memset(&vsDataMeanBuf[vsMeanCntOffset1], 0,
+               VS_NUM_RANGE_SEL_BIN * VS_NUM_VIRTUAL_CHANNEL * sizeof(vsDataMeanBuf[0]));
 
 
         if (vsMeanCntOffset0 == 0)
@@ -1062,11 +1088,14 @@ uint32_t MmwDemo_runVitalSigns(uint32_t vsBaseAddr, uint16_t indicateNoTarget, u
      * range bins are 'rangeBinStride' elements apart.
      */
     numVirtAnt     = vitalSignsAntenna.numTxAntennas * vitalSignsAntenna.numRxAntennas;
+    /* The radar-cube range stride uses all physical virtual antennas, even
+     * when vital-sign processing keeps only the first six channels. */
+    rangeBinStride = vitalSignsAntenna.numChirpsPerFrame * numVirtAnt;
     if (numVirtAnt > VS_NUM_VIRTUAL_CHANNEL)
     {
         numVirtAnt = VS_NUM_VIRTUAL_CHANNEL;
     }
-    rangeBinStride = vitalSignsAntenna.numChirpsPerFrame * numVirtAnt;
+    /* Original: rangeBinStride = vitalSignsAntenna.numChirpsPerFrame * numVirtAnt; */
 
     /* Center the VS_NUM_RANGE_SEL_BIN window around the target range bin */
     if (vsRangeBin >= (VS_NUM_RANGE_SEL_BIN / 2))
