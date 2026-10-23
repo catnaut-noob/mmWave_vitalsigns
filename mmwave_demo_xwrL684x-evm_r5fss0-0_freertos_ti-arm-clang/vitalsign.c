@@ -1082,15 +1082,14 @@ uint32_t MmwDemo_runVitalSigns(uint32_t vsBaseAddr, uint16_t indicateNoTarget, u
 
     /*
      * iwrl6844 radar cube layout (DPIF_RADARCUBE_FORMAT_2):
-     *   cmplx16ImRe_t x[numRangeBins][numChirps][numTx][numRx]
-     * For a fixed (first) chirp, the numVirtAnt = numTx*numRx samples that
-     * belong to a single range bin are stored contiguously, and successive
-     * range bins are 'rangeBinStride' elements apart.
+     *   cmplx16ImRe_t x[numRangeBins][numDopplerChirps][numTx][numRx]
+     * numChirpsPerFrame already includes all Tx chirps. For each range bin,
+     * the first Doppler chirp's numTx*numRx virtual antenna samples are
+     * contiguous; successive range bins are numChirpsPerFrame*numRx apart.
      */
     numVirtAnt     = vitalSignsAntenna.numTxAntennas * vitalSignsAntenna.numRxAntennas;
-    /* The radar-cube range stride uses all physical virtual antennas, even
-     * when vital-sign processing keeps only the first six channels. */
-    rangeBinStride = vitalSignsAntenna.numChirpsPerFrame * numVirtAnt;
+    /* Previous: rangeBinStride = vitalSignsAntenna.numChirpsPerFrame * numVirtAnt; */
+    rangeBinStride = vitalSignsAntenna.numChirpsPerFrame * vitalSignsAntenna.numRxAntennas;
     if (numVirtAnt > VS_NUM_VIRTUAL_CHANNEL)
     {
         numVirtAnt = VS_NUM_VIRTUAL_CHANNEL;
